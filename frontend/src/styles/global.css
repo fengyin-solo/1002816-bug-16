@@ -33,3 +33,8 @@ body { margin: 0; background: #f6f8fb; color: #1f2937; }
 .link { border: none; background: none; color: var(--brand); cursor: pointer; padding: 0; }
 .page-foot { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: var(--muted); }
 .error-text { color: #b42318; }
+.ok-text { color: #067647; }
+.panel { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+.panel-title { margin: 0 0 10px; font-size: 14px; }
+.panel-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+.filter-item select { padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; }

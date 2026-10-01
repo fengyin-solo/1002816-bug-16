@@ -1,4 +1,4 @@
-"""施肥作业接口：维护施肥记录，覆盖安排施肥、登记过量、补施肥料等动作。"""
+"""施肥作业接口：填报与确认分离——填报人只写不确认，确认归本组组长。"""
 from __future__ import annotations
 
 from typing import Any
@@ -12,22 +12,39 @@ router = APIRouter(prefix="/api/fertilize", tags=["施肥作业"])
 
 service = FertilizeService()
 
-LIST_FIELDS = ["施肥编号", "施肥区域", "肥料类型", "施肥量", "施肥方式", "施肥日期", "作业人员", "施肥状态"]
+LIST_FIELDS = ["施肥编号", "施肥区域", "肥料类型", "施肥量", "施肥面积", "所属班组", "填报人", "经手人", "确认人", "施肥状态"]
 STATUSES = ["待施肥", "已施肥", "过量", "已补施"]
 
 
 @router.get("", response_model=PageResult[dict])
 def list_entries(
     keyword: str | None = Query(default=None, description="按施肥编号检索"),
+    region: str | None = Query(default=None, description="按施肥区域检索"),
+    fertilizer: str | None = Query(default=None, description="按肥料类型检索"),
     status: str | None = Query(default=None, description="待施肥、已施肥、过量、已补施"),
     page: int = 1,
     size: int = 20,
 ) -> PageResult[dict]:
-    """按施肥编号与状态过滤施肥作业列表；没有数据时返回空页，不报错。"""
+    """按编号、区域、肥料类型与状态过滤施肥列表；没有数据时返回空页，不报错。"""
     if size > 200:
         raise HTTPException(status_code=400, detail="每页最多 200 条，请缩小分页范围")
-    items, total = service.list_entries(keyword=keyword, status=status, page=page, size=size)
+    items, total = service.list_entries(
+        keyword=keyword, region=region, fertilizer=fertilizer, status=status, page=page, size=size
+    )
     return PageResult(items=items, total=total, page=page, size=size)
+
+
+@router.get("/summary")
+def summary() -> dict[str, Any]:
+    """施肥看板：已施面积随明细实时重算，与列表同源。"""
+    return service.summary()
+
+
+@router.get("/export")
+def export_entries() -> dict[str, Any]:
+    """导出施肥作业清单：与列表同一序列化口径，经手人保持一致。"""
+    items, total = service.list_entries(page=1, size=10000)
+    return {"module": "fertilize", "total": total, "items": items}
 
 
 @router.get("/{entry_id}", response_model=dict)
@@ -41,25 +58,14 @@ def get_entry(entry_id: int) -> dict:
 
 @router.post("", response_model=ActionResult)
 def create_entry(payload: EntryPayload) -> ActionResult:
-    """登记一条施肥记录，缺字段时说明原因而不是静默丢弃。"""
-    entry, missing = service.create_entry(payload.values)
-    if missing:
-        return ActionResult(ok=False, message=f"缺少必填字段：{'、'.join(missing)}")
-    return ActionResult(ok=True, message="施肥记录已登记", entry=entry)
+    """填报施肥记录：同一片地重复提交只认第一次；只读岗不能登记。"""
+    entry, message = service.create_entry(payload.values)
+    return ActionResult(ok=entry is not None, message=message, entry=entry)
 
 
 @router.post("/{entry_id}/actions", response_model=ActionResult)
 def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
-    """对单条施肥记录执行安排施肥、登记过量、补施肥料；不允许的动作会被拦下并说明原因。"""
+    """执行确认施肥、登记过量、补施肥料、转交；越权与重复提交当场拦下并说明缺哪个角色。"""
     action = str(payload.values.get("action") or "").strip()
-    entry, message = service.run_action(entry_id, action)
-    if entry is None:
-        return ActionResult(ok=False, message=message)
-    return ActionResult(ok=True, message=message, entry=entry)
-
-
-@router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出施肥作业清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
-    return {"module": "fertilize", "total": total, "items": items}
+    entry, message = service.run_action(entry_id, action, payload.values)
+    return ActionResult(ok=entry is not None, message=message, entry=entry)
