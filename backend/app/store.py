@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 from app.seed import SEED_ROWS
@@ -11,6 +12,8 @@ from app.seed import SEED_ROWS
 
 class Store:
     def __init__(self) -> None:
+        # 写操作（查重+落库这类组合步骤）都要在这把锁里完成，避免并发下各落一半。
+        self.lock = threading.RLock()
         self._tables: dict[str, list[dict[str, Any]]] = {
             name: [dict(row) for row in rows] for name, rows in SEED_ROWS.items()
         }
